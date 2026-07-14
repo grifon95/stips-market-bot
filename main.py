@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from stips import uzmi_cene
+from istorija import sacuvaj_cene
 
 
 print("🚀 STIPS BOT START")
@@ -8,7 +10,17 @@ print("🚀 STIPS BOT START")
 datum = datetime.now().strftime("%d.%m.%Y")
 
 
+# uzimamo cene sa STIPS-a
 cene = uzmi_cene()
+
+
+# čuvamo u istoriju
+istorija = sacuvaj_cene(cene)
+
+
+print("\nISTORIJA:")
+print(istorija)
+
 
 
 poruka = f"""
@@ -27,4 +39,5 @@ Datum: {datum}
 """
 
 
+print("\nPORUKA:")
 print(poruka)
