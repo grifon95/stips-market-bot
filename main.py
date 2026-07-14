@@ -5,6 +5,7 @@ from datetime import datetime
 from stips import uzmi_cene
 from istorija import sacuvaj_cene
 from analiza import napravi_analizu
+from grafikon import napravi_grafikon
 
 
 print("🚀 STIPS BOT START")
@@ -13,31 +14,55 @@ print("🚀 STIPS BOT START")
 datum = datetime.now().strftime("%d.%m.%Y")
 
 
-# uzimamo cene sa STIPS-a
+# =========================
+# UZIMANJE CENA
+# =========================
+
 cene = uzmi_cene()
 
 print("IZVUČENO:")
 print(cene)
 
 
-# čuvamo istoriju
-istorija = sacuvaj_cene(cene)
 
+# =========================
+# ČUVANJE ISTORIJE
+# =========================
+
+istorija = sacuvaj_cene(cene)
 
 print("\nISTORIJA:")
 print(istorija)
 
 
-# pravimo analizu
-analiza = napravi_analizu()
 
+# =========================
+# ANALIZA
+# =========================
+
+analiza = napravi_analizu()
 
 print("\nANALIZA:")
 print(analiza)
 
 
 
-# ako nema dovoljno podataka, ipak šaljemo cenu
+# =========================
+# GRAFIKON
+# =========================
+
+grafikon = napravi_grafikon()
+
+print("\nGrafikon napravljen:")
+print(grafikon)
+
+
+
+# =========================
+# TELEGRAM PORUKA
+# =========================
+
+
 if "Nema dovoljno podataka" in analiza:
 
     poruka = f"""
@@ -70,12 +95,15 @@ Datum: {datum}
 """
 
 
+
 print("\nPORUKA:")
 print(poruka)
 
 
 
-# TELEGRAM
+# =========================
+# SLANJE TEKSTA
+# =========================
 
 token = os.environ["BOT_TOKEN"]
 chat_id = os.environ["CHAT_ID"]
@@ -93,5 +121,31 @@ response = requests.post(
 )
 
 
-print("\nTelegram:")
+print("\nTelegram tekst:")
 print(response.text)
+
+
+
+# =========================
+# SLANJE GRAFIKONA
+# =========================
+
+url_slika = f"https://api.telegram.org/bot{token}/sendPhoto"
+
+
+with open("grafikon_cena.png", "rb") as slika:
+
+    response_slika = requests.post(
+        url_slika,
+        data={
+            "chat_id": chat_id,
+            "caption": "📈 STIPS grafikon cena"
+        },
+        files={
+            "photo": slika
+        }
+    )
+
+
+print("\nTelegram slika:")
+print(response_slika.text)
