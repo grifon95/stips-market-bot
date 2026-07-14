@@ -16,7 +16,9 @@ cene = uzmi_cene()
 
 # čuvamo u istoriju
 istorija = sacuvaj_cene(cene)
+analiza = napravi_analizu()
 
+print(analiza)
 
 print("\nISTORIJA:")
 print(istorija)
