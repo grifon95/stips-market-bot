@@ -40,3 +40,15 @@ jobs:
 
       run: |
         python main.py
+
+
+    - name: Save history
+      run: |
+        git config --global user.name "stips-bot"
+        git config --global user.email "stips-bot@github.com"
+
+        git add istorija_cena.csv
+
+        git commit -m "Update price history" || exit 0
+
+        git push
