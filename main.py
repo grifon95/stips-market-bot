@@ -1,6 +1,5 @@
-import os
 from datetime import datetime
-import requests
+from stips import uzmi_cene
 
 
 print("🚀 STIPS BOT START")
@@ -9,29 +8,23 @@ print("🚀 STIPS BOT START")
 datum = datetime.now().strftime("%d.%m.%Y")
 
 
+cene = uzmi_cene()
+
+
 poruka = f"""
 📊 STIPS MARKET ALERT
 
 Datum: {datum}
 
-✅ GitHub Action radi!
+🌾 Pšenica:
+{cene['psenica']} din/kg
+
+🌽 Kukuruz:
+{cene['kukuruz']} din/kg
+
+🫘 Soja:
+{cene['soja']} din/kg
 """
 
 
-token = os.environ["BOT_TOKEN"]
-chat_id = os.environ["CHAT_ID"]
-
-
-url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-
-response = requests.post(
-    url,
-    data={
-        "chat_id": chat_id,
-        "text": poruka
-    }
-)
-
-
-print(response.text)
+print(poruka)
