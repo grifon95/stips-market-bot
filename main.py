@@ -2,7 +2,7 @@ from datetime import datetime
 
 from stips import uzmi_cene
 from istorija import sacuvaj_cene
-
+from analiza import napravi_analizu
 
 print("🚀 STIPS BOT START")
 
