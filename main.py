@@ -1,4 +1,5 @@
 import os
+import sys
 import requests
 from datetime import datetime
 
@@ -13,59 +14,112 @@ print("🚀 STIPS BOT START")
 
 datum = datetime.now().strftime("%d.%m.%Y")
 
-
-# =========================
-# UZIMANJE CENA
-# =========================
-
-cene = uzmi_cene()
-
-print("IZVUČENO:")
-print(cene)
+token = os.environ["BOT_TOKEN"]
+chat_id = os.environ["CHAT_ID"]
 
 
+def posalji_telegram_poruku(tekst):
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-# =========================
-# ČUVANJE ISTORIJE
-# =========================
+    response = requests.post(
+        url,
+        data={
+            "chat_id": chat_id,
+            "text": tekst
+        },
+        timeout=30
+    )
 
-istorija = sacuvaj_cene(cene)
+    print("\nTelegram tekst status:", response.status_code)
+    print(response.text)
 
-print("\nISTORIJA:")
-print(istorija)
-
-
-
-# =========================
-# ANALIZA
-# =========================
-
-analiza = napravi_analizu()
-
-print("\nANALIZA:")
-print(analiza)
+    response.raise_for_status()
 
 
+def posalji_grafikon(putanja):
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
 
-# =========================
-# GRAFIKON
-# =========================
+    with open(putanja, "rb") as slika:
+        response = requests.post(
+            url,
+            data={
+                "chat_id": chat_id,
+                "caption": "📈 STIPS grafikon cena"
+            },
+            files={
+                "photo": slika
+            },
+            timeout=60
+        )
 
-grafikon = napravi_grafikon()
+    print("\nTelegram slika status:", response.status_code)
+    print(response.text)
 
-print("\nGrafikon napravljen:")
-print(grafikon)
-
-
-
-# =========================
-# TELEGRAM PORUKA
-# =========================
+    response.raise_for_status()
 
 
-if "Nema dovoljno podataka" in analiza:
+try:
+    # =========================
+    # UZIMANJE CENA
+    # =========================
 
-    poruka = f"""
+    cene = uzmi_cene()
+
+    print("\nIZVUČENO:")
+    print(cene)
+
+
+    # Provera da li neka cena nedostaje
+    nedostajuce_cene = [
+        proizvod
+        for proizvod, cena in cene.items()
+        if cena is None
+    ]
+
+    if nedostajuce_cene:
+        raise RuntimeError(
+            "Nisu pronađene cene za: "
+            + ", ".join(nedostajuce_cene)
+        )
+
+
+    # =========================
+    # ČUVANJE ISTORIJE
+    # =========================
+
+    istorija = sacuvaj_cene(cene)
+
+    print("\nISTORIJA:")
+    print(istorija)
+
+
+    # =========================
+    # ANALIZA
+    # =========================
+
+    analiza = napravi_analizu()
+
+    print("\nANALIZA:")
+    print(analiza)
+
+
+    # =========================
+    # GRAFIKON
+    # =========================
+
+    grafikon = napravi_grafikon()
+
+    print("\nGRAFIKON NAPRAVLJEN:")
+    print(grafikon)
+
+
+    # =========================
+    # PRAVLJENJE PORUKE
+    # =========================
+
+    if "Nema dovoljno podataka" in analiza:
+
+        poruka = f"""
 📊 STIPS MARKET ALERT
 
 Datum: {datum}
@@ -79,73 +133,66 @@ Datum: {datum}
 🫘 Soja:
 {cene['soja']} din/kg
 
-
 ⚠️ Još nema dovoljno istorije za trend analizu.
 """
 
-else:
+    else:
 
-    poruka = f"""
+        poruka = f"""
 📊 STIPS MARKET ALERT
 
 Datum: {datum}
-
 
 {analiza}
 """
 
 
-
-print("\nPORUKA:")
-print(poruka)
-
+    print("\nPORUKA:")
+    print(poruka)
 
 
-# =========================
-# SLANJE TEKSTA
-# =========================
+    # =========================
+    # SLANJE NA TELEGRAM
+    # =========================
 
-token = os.environ["BOT_TOKEN"]
-chat_id = os.environ["CHAT_ID"]
+    posalji_telegram_poruku(poruka)
+    posalji_grafikon(grafikon)
 
-
-url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-
-response = requests.post(
-    url,
-    data={
-        "chat_id": chat_id,
-        "text": poruka
-    }
-)
+    print("\n✅ STIPS BOT JE USPEŠNO ZAVRŠIO RAD")
 
 
-print("\nTelegram tekst:")
-print(response.text)
+except Exception as greska:
+
+    print("\n❌ GREŠKA:")
+    print(str(greska))
 
 
+    upozorenje = f"""
+⚠️ STIPS BOT GREŠKA
 
-# =========================
-# SLANJE GRAFIKONA
-# =========================
+Datum: {datum}
 
-url_slika = f"https://api.telegram.org/bot{token}/sendPhoto"
+Bot nije uspeo da preuzme ili obradi najnovije STIPS cene.
 
+Mogući razlozi:
+• STIPS je promenio format izveštaja
+• STIPS sajt trenutno nije dostupan
+• jedna ili više cena nisu pronađene
+• došlo je do greške u scraperu
 
-with open("grafikon_cena.png", "rb") as slika:
+Detalj greške:
+{str(greska)}
 
-    response_slika = requests.post(
-        url_slika,
-        data={
-            "chat_id": chat_id,
-            "caption": "📈 STIPS grafikon cena"
-        },
-        files={
-            "photo": slika
-        }
-    )
+Proveri GitHub Actions log.
+"""
 
 
-print("\nTelegram slika:")
-print(response_slika.text)
+    try:
+        posalji_telegram_poruku(upozorenje)
+
+    except Exception as telegram_greska:
+        print("\nNije moguće poslati Telegram upozorenje:")
+        print(str(telegram_greska))
+
+
+    sys.exit(1)
