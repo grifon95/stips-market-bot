@@ -21,23 +21,23 @@ def normalizuj_tekst(tekst):
     return re.sub(r"\s+", " ", tekst).strip()
 
 
-def pretvori_u_broj(vrednost):
+def broj(vrednost):
     if vrednost is None:
         return None
 
-    return float(vrednost.replace(".", "").replace(",", "."))
+    return float(vrednost.replace(",", "."))
 
 
-def datum_clanka(tekst):
-    poklapanje = re.search(
+def pronadji_datum(tekst):
+    rezultat = re.search(
         r"\b(\d{2})/(\d{2})/(\d{4})\b",
         tekst
     )
 
-    if not poklapanje:
+    if not rezultat:
         return None
 
-    dan, mesec, godina = map(int, poklapanje.groups())
+    dan, mesec, godina = map(int, rezultat.groups())
 
     try:
         return datetime(godina, mesec, dan)
@@ -49,9 +49,13 @@ def pronadji_najnoviji_izvestaj():
     kandidati = []
     vidjeni = set()
 
-    # Pregledamo nekoliko prvih strana arhive
-    for broj_strane in range(3):
-        url = ARHIVA_URL if broj_strane == 0 else f"{ARHIVA_URL}?page={broj_strane}"
+    # Pregledamo prve tri strane STIPS arhive
+    for stranica in range(3):
+
+        if stranica == 0:
+            url = ARHIVA_URL
+        else:
+            url = f"{ARHIVA_URL}?page={stranica}"
 
         response = requests.get(
             url,
@@ -63,29 +67,32 @@ def pronadji_najnoviji_izvestaj():
         soup = BeautifulSoup(response.text, "html.parser")
 
         for link in soup.find_all("a", href=True):
-            naslov = normalizuj_tekst(link.get_text(" ", strip=True))
-            naslov_mali = naslov.lower()
 
-            if "promet robe na produktnoj berzi" not in naslov_mali:
+            naslov = normalizuj_tekst(
+                link.get_text(" ", strip=True)
+            )
+
+            if "promet robe na produktnoj berzi" not in naslov.lower():
                 continue
 
-            puni_link = urljoin(BASE_URL, link["href"])
+            puni_link = urljoin(
+                BASE_URL,
+                link["href"]
+            )
 
-            if puni_link in vidjeni:
-                continue
-
-            vidjeni.add(puni_link)
-            kandidati.append(puni_link)
+            if puni_link not in vidjeni:
+                vidjeni.add(puni_link)
+                kandidati.append(puni_link)
 
     if not kandidati:
         raise RuntimeError(
-            "Nije pronađen nijedan STIPS izveštaj Produktne berze."
+            "Nije pronađen nijedan STIPS izveštaj."
         )
 
-    # Otvaramo pronađene članke i biramo onaj sa najnovijim datumom objave
     provereni = []
 
     for link in kandidati[:20]:
+
         try:
             response = requests.get(
                 link,
@@ -94,114 +101,130 @@ def pronadji_najnoviji_izvestaj():
             )
             response.raise_for_status()
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            tekst = normalizuj_tekst(soup.get_text(" ", strip=True))
-            datum = datum_clanka(tekst)
+            soup = BeautifulSoup(
+                response.text,
+                "html.parser"
+            )
+
+            tekst = normalizuj_tekst(
+                soup.get_text(" ", strip=True)
+            )
+
+            datum = pronadji_datum(tekst)
 
             if datum:
-                provereni.append((datum, link, tekst))
+                provereni.append(
+                    (datum, link, tekst)
+                )
 
         except requests.RequestException as greska:
-            print("Preskačem link zbog greške:", link, greska)
+            print(
+                "Preskačem link:",
+                link,
+                greska
+            )
 
     if not provereni:
         raise RuntimeError(
-            "Pronađeni su linkovi, ali nije moguće utvrditi datum izveštaja."
+            "Nije moguće utvrditi datum najnovijeg izveštaja."
         )
 
-    provereni.sort(key=lambda stavka: stavka[0], reverse=True)
+    provereni.sort(
+        key=lambda x: x[0],
+        reverse=True
+    )
 
     datum, link, tekst = provereni[0]
 
     print("NAJNOVIJI IZVEŠTAJ:")
     print(link)
-    print("Datum objave:", datum.strftime("%d.%m.%Y"))
+    print(
+        "Datum objave:",
+        datum.strftime("%d.%m.%Y")
+    )
 
     return link, tekst
 
 
-def izdvoji_deo(tekst, pocetak, sledece_reci):
-    tekst_mali = tekst.lower()
-    pozicija = tekst_mali.find(pocetak.lower())
+def izvuci_prvi_broj(tekst, obrasci):
 
-    if pozicija == -1:
-        return ""
-
-    kraj = len(tekst)
-
-    for rec in sledece_reci:
-        sledeca_pozicija = tekst_mali.find(
-            rec.lower(),
-            pozicija + len(pocetak)
-        )
-
-        if sledeca_pozicija != -1:
-            kraj = min(kraj, sledeca_pozicija)
-
-    return tekst[pozicija:kraj]
-
-
-def pronadji_cenu(deo, obrasci):
     for obrazac in obrasci:
+
         rezultat = re.search(
             obrazac,
-            deo,
+            tekst,
             flags=re.IGNORECASE
         )
 
         if rezultat:
-            return pretvori_u_broj(rezultat.group(1))
+            return broj(rezultat.group(1))
 
     return None
 
 
 def uzmi_cene():
+
     link, tekst = pronadji_najnoviji_izvestaj()
 
-    deo_kukuruz = izdvoji_deo(
+    # KUKURUZ
+    kukuruz = izvuci_prvi_broj(
         tekst,
-        "kukuruz",
-        ["pšenic", "psenic", "soj", "ječam", "jecam"]
-    )
-
-    deo_psenica = izdvoji_deo(
-        tekst,
-        "pšenic",
-        ["soj", "kukuruz", "ječam", "jecam"]
-    )
-
-    deo_soja = izdvoji_deo(
-        tekst,
-        "soj",
-        ["ječam", "jecam", "uljana repica", "suncokret"]
-    )
-
-    kukuruz = pronadji_cenu(
-        deo_kukuruz,
         [
-            r"ponder(?:isana)? cena iznosila je\s*(\d+[.,]\d+)",
-            r"prosečna cena iznosila je\s*(\d+[.,]\d+)",
-            r"prosecna cena iznosila je\s*(\d+[.,]\d+)"
+            (
+                r"ugovor zaključen je za kukuruz.*?"
+                r"po ceni od\s*(\d+,\d+)\s*din/kg"
+            ),
+            (
+                r"kukuruz.*?"
+                r"ponder(?:isana)? cena.*?"
+                r"(\d+,\d+)\s*din/kg"
+            ),
+            (
+                r"kukuruz.*?"
+                r"prosečna cena.*?"
+                r"(\d+,\d+)\s*din/kg"
+            )
         ]
     )
 
-    psenica = pronadji_cenu(
-        deo_psenica,
+    # PŠENICA
+    psenica = izvuci_prvi_broj(
+        tekst,
         [
-            r"prosečna cena iznosila je\s*(\d+[.,]\d+)",
-            r"prosecna cena iznosila je\s*(\d+[.,]\d+)",
-            r"ponder(?:isana)? cena iznosila je\s*(\d+[.,]\d+)"
+            (
+                r"prosečna cena hlebnog zrna "
+                r"iznosila je\s*(\d+,\d+)"
+            ),
+            (
+                r"prosečna cena pšenice "
+                r"iznosila je\s*(\d+,\d+)"
+            ),
+            (
+                r"pšenic.*?"
+                r"prosečna cena.*?"
+                r"(\d+,\d+)\s*din/kg"
+            )
         ]
     )
 
-    soja = pronadji_cenu(
-        deo_soja,
+    # SOJA
+    soja = izvuci_prvi_broj(
+        tekst,
         [
-            r"zaključeni su po ceni od\s*(\d+[.,]\d+)",
-            r"zakljuceni su po ceni od\s*(\d+[.,]\d+)",
-            r"ponder(?:isana)? cena iznosila je\s*(\d+[.,]\d+)",
-            r"prosečna cena iznosila je\s*(\d+[.,]\d+)",
-            r"prosecna cena iznosila je\s*(\d+[.,]\d+)"
+            (
+                r"sojinog zrna.*?"
+                r"jedinstvenom cenovnom nivou od "
+                r"(\d+,\d+)\s*din/kg"
+            ),
+            (
+                r"sojin.*?"
+                r"trgovalo se.*?"
+                r"(\d+,\d+)\s*din/kg"
+            ),
+            (
+                r"sojino zrno.*?"
+                r"po ceni od\s*(\d+,\d+)"
+            )
         ]
     )
 
@@ -213,12 +236,16 @@ def uzmi_cene():
 
     print("IZVUČENO:")
     print(cene)
+
     print("IZVOR:")
     print(link)
 
-    if all(vrednost is None for vrednost in cene.values()):
+    if all(
+        vrednost is None
+        for vrednost in cene.values()
+    ):
         raise RuntimeError(
-            "Najnoviji izveštaj je pronađen, ali nijedna cena nije izvučena."
+            "Izveštaj je pronađen, ali cene nisu izvučene."
         )
 
     return cene
