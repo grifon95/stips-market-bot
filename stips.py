@@ -66,10 +66,10 @@ def pronadji_najnoviji_izvestaj():
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        for link in soup.find_all("a", href=True):
+        for link_element in soup.find_all("a", href=True):
 
             naslov = normalizuj_tekst(
-                link.get_text(" ", strip=True)
+                link_element.get_text(" ", strip=True)
             )
 
             if "promet robe na produktnoj berzi" not in naslov.lower():
@@ -77,12 +77,16 @@ def pronadji_najnoviji_izvestaj():
 
             puni_link = urljoin(
                 BASE_URL,
-                link["href"]
+                link_element["href"]
             )
 
             if puni_link not in vidjeni:
                 vidjeni.add(puni_link)
-                kandidati.append(puni_link)
+
+                kandidati.append({
+                    "link": puni_link,
+                    "naslov": naslov
+                })
 
     if not kandidati:
         raise RuntimeError(
@@ -91,7 +95,9 @@ def pronadji_najnoviji_izvestaj():
 
     provereni = []
 
-    for link in kandidati[:20]:
+    for kandidat in kandidati[:20]:
+
+        link = kandidat["link"]
 
         try:
             response = requests.get(
@@ -112,10 +118,23 @@ def pronadji_najnoviji_izvestaj():
 
             datum = pronadji_datum(tekst)
 
-            if datum:
-                provereni.append(
-                    (datum, link, tekst)
+            # Uzimamo zvanični naslov sa same stranice
+            h1 = soup.find("h1")
+
+            if h1:
+                naslov = normalizuj_tekst(
+                    h1.get_text(" ", strip=True)
                 )
+            else:
+                naslov = kandidat["naslov"]
+
+            if datum:
+                provereni.append({
+                    "datum": datum,
+                    "link": link,
+                    "naslov": naslov,
+                    "tekst": tekst
+                })
 
         except requests.RequestException as greska:
             print(
@@ -130,20 +149,21 @@ def pronadji_najnoviji_izvestaj():
         )
 
     provereni.sort(
-        key=lambda x: x[0],
+        key=lambda x: x["datum"],
         reverse=True
     )
 
-    datum, link, tekst = provereni[0]
+    najnoviji = provereni[0]
 
     print("NAJNOVIJI IZVEŠTAJ:")
-    print(link)
+    print(najnoviji["naslov"])
+    print(najnoviji["link"])
     print(
         "Datum objave:",
-        datum.strftime("%d.%m.%Y")
+        najnoviji["datum"].strftime("%d.%m.%Y")
     )
 
-    return link, tekst
+    return najnoviji
 
 
 def izvuci_prvi_broj(tekst, obrasci):
@@ -164,7 +184,9 @@ def izvuci_prvi_broj(tekst, obrasci):
 
 def uzmi_cene():
 
-    link, tekst = pronadji_najnoviji_izvestaj()
+    izvestaj = pronadji_najnoviji_izvestaj()
+
+    tekst = izvestaj["tekst"]
 
     # KUKURUZ
     kukuruz = izvuci_prvi_broj(
@@ -234,11 +256,17 @@ def uzmi_cene():
         "soja": soja
     }
 
+    podaci_izvestaja = {
+        "naslov": izvestaj["naslov"],
+        "datum_objave": izvestaj["datum"].strftime("%d.%m.%Y"),
+        "link": izvestaj["link"]
+    }
+
     print("IZVUČENO:")
     print(cene)
 
-    print("IZVOR:")
-    print(link)
+    print("PODACI IZVEŠTAJA:")
+    print(podaci_izvestaja)
 
     if all(
         vrednost is None
@@ -248,4 +276,4 @@ def uzmi_cene():
             "Izveštaj je pronađen, ali cene nisu izvučene."
         )
 
-    return cene
+    return cene, podaci_izvestaja
