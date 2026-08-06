@@ -12,7 +12,7 @@ from grafikon import napravi_grafikon
 print("🚀 STIPS BOT START")
 
 
-datum = datetime.now().strftime("%d.%m.%Y")
+datum_provere = datetime.now().strftime("%d.%m.%Y")
 
 token = os.environ["BOT_TOKEN"]
 chat_id = os.environ["CHAT_ID"]
@@ -25,7 +25,8 @@ def posalji_telegram_poruku(tekst):
         url,
         data={
             "chat_id": chat_id,
-            "text": tekst
+            "text": tekst,
+            "disable_web_page_preview": True
         },
         timeout=30
     )
@@ -60,16 +61,18 @@ def posalji_grafikon(putanja):
 
 try:
     # =========================
-    # UZIMANJE CENA
+    # UZIMANJE CENA I IZVEŠTAJA
     # =========================
 
-    cene = uzmi_cene()
+    cene, podaci_izvestaja = uzmi_cene()
 
     print("\nIZVUČENO:")
     print(cene)
 
+    print("\nIZVEŠTAJ:")
+    print(podaci_izvestaja)
 
-    # Provera da li neka cena nedostaje
+
     nedostajuce_cene = [
         proizvod
         for proizvod, cena in cene.items()
@@ -114,24 +117,39 @@ try:
 
 
     # =========================
-    # PRAVLJENJE PORUKE
+    # TELEGRAM PORUKA
     # =========================
+
+    zaglavlje = f"""
+📊 STIPS MARKET ALERT
+
+Provera izvršena:
+{datum_provere}
+
+Zvanični izveštaj:
+{podaci_izvestaja['naslov']}
+
+Objavljen:
+{podaci_izvestaja['datum_objave']}
+
+Izvor:
+{podaci_izvestaja['link']}
+"""
+
 
     if "Nema dovoljno podataka" in analiza:
 
         poruka = f"""
-📊 STIPS MARKET ALERT
-
-Datum: {datum}
+{zaglavlje}
 
 🌾 Pšenica:
-{cene['psenica']} din/kg
+{cene['psenica']:.2f} din/kg bez PDV-a
 
 🌽 Kukuruz:
-{cene['kukuruz']} din/kg
+{cene['kukuruz']:.2f} din/kg bez PDV-a
 
 🫘 Soja:
-{cene['soja']} din/kg
+{cene['soja']:.2f} din/kg bez PDV-a
 
 ⚠️ Još nema dovoljno istorije za trend analizu.
 """
@@ -139,9 +157,7 @@ Datum: {datum}
     else:
 
         poruka = f"""
-📊 STIPS MARKET ALERT
-
-Datum: {datum}
+{zaglavlje}
 
 {analiza}
 """
@@ -150,10 +166,6 @@ Datum: {datum}
     print("\nPORUKA:")
     print(poruka)
 
-
-    # =========================
-    # SLANJE NA TELEGRAM
-    # =========================
 
     posalji_telegram_poruku(poruka)
     posalji_grafikon(grafikon)
@@ -170,15 +182,10 @@ except Exception as greska:
     upozorenje = f"""
 ⚠️ STIPS BOT GREŠKA
 
-Datum: {datum}
+Provera izvršena:
+{datum_provere}
 
 Bot nije uspeo da preuzme ili obradi najnovije STIPS cene.
-
-Mogući razlozi:
-• STIPS je promenio format izveštaja
-• STIPS sajt trenutno nije dostupan
-• jedna ili više cena nisu pronađene
-• došlo je do greške u scraperu
 
 Detalj greške:
 {str(greska)}
