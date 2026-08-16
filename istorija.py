@@ -9,10 +9,8 @@ def sacuvaj_cene(cene):
 
     danas = datetime.now().strftime("%d.%m.%Y")
 
-
     novi = cene.copy()
     novi["datum"] = danas
-
 
     novi_red = pd.DataFrame([novi])
 
@@ -21,14 +19,59 @@ def sacuvaj_cene(cene):
 
         stara = pd.read_csv(fajl)
 
+        if "datum" not in stara.columns:
+            raise RuntimeError(
+                "istorija_cena.csv nema kolonu datum."
+            )
 
-        # proveravamo da li već postoji današnji datum
-        if danas in stara["datum"].astype(str).values:
 
-            print("⚠️ Već postoji podatak za danas:", danas)
+        # =========================
+        # AKO DANAS VEĆ POSTOJI
+        # AŽURIRAJ GA
+        # =========================
 
-            return stara
+        maska = (
+            stara["datum"]
+            .astype(str)
+            .eq(danas)
+        )
 
+        if maska.any():
+
+            print(
+                "🔄 Već postoji podatak za danas."
+            )
+            print(
+                "Ažuriram ga najnovijim cenama:"
+            )
+            print(cene)
+
+            # Ako slučajno postoji više redova
+            # za isti datum, brišemo ih sve
+            # i ostavljamo samo novi.
+            stara = stara.loc[~maska]
+
+            istorija = pd.concat(
+                [stara, novi_red],
+                ignore_index=True
+            )
+
+            istorija.to_csv(
+                fajl,
+                index=False
+            )
+
+            print(
+                "✅ Današnji podatak ažuriran:",
+                danas
+            )
+
+            return istorija
+
+
+        # =========================
+        # NOVI DAN
+        # =========================
 
         istorija = pd.concat(
             [stara, novi_red],
@@ -41,13 +84,15 @@ def sacuvaj_cene(cene):
         istorija = novi_red
 
 
-
     istorija.to_csv(
         fajl,
         index=False
     )
 
 
-    print("✅ Nova cena sačuvana")
+    print(
+        "✅ Nova cena sačuvana:",
+        danas
+    )
 
     return istorija
