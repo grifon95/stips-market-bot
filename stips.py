@@ -1,9 +1,13 @@
 import re
+from datetime import datetime
+from urllib.parse import urljoin
+
 import requests
 from bs4 import BeautifulSoup
 
 
-URL = "https://nscomex.com/podaci-iz-trgovanja/nedeljni-izvestaj/"
+BASE_URL = "https://nscomex.com"
+ARHIVA_URL = "https://nscomex.com/category/nedeljni-izvestaj/"
 
 HEADERS = {
     "User-Agent": (
@@ -21,17 +25,20 @@ def broj(vrednost):
     if vrednost is None:
         return None
 
-    return float(vrednost.replace(".", "").replace(",", "."))
+    return float(
+        vrednost
+        .replace(".", "")
+        .replace(",", ".")
+    )
 
 
-def izvuci_prvi_broj(tekst, obrasci):
-
+def izvuci_broj(tekst, obrasci):
     for obrazac in obrasci:
 
         rezultat = re.search(
             obrazac,
             tekst,
-            flags=re.IGNORECASE | re.DOTALL
+            flags=re.IGNORECASE
         )
 
         if rezultat:
@@ -40,156 +47,303 @@ def izvuci_prvi_broj(tekst, obrasci):
     return None
 
 
-def uzmi_izvestaje():
+# ==========================================
+# PRONALAZAK POSLEDNJIH IZVEŠTAJA
+# ==========================================
 
-    response = requests.get(
-        URL,
-        headers=HEADERS,
-        timeout=30
-    )
+def pronadji_izvestaje():
 
-    response.raise_for_status()
+    linkovi = []
+    vidjeni = set()
 
-    soup = BeautifulSoup(
-        response.text,
-        "html.parser"
-    )
+    # pregledamo više strana arhive
+    for stranica in range(1, 5):
 
-    tekst = normalizuj_tekst(
-        soup.get_text(" ", strip=True)
-    )
+        if stranica == 1:
+            url = ARHIVA_URL
+        else:
+            url = f"{ARHIVA_URL}page/{stranica}/"
 
-    # Odvajamo #82, #81, #80...
-    delovi = re.split(
-        r"(?=#\d+\s*\()",
-        tekst
-    )
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        soup = BeautifulSoup(
+            response.text,
+            "html.parser"
+        )
+
+        for element in soup.find_all("a", href=True):
+
+            href = urljoin(
+                BASE_URL,
+                element["href"]
+            )
+
+            if not re.search(
+                r"/nedeljni-izvestaj/\d+-",
+                href
+            ):
+                continue
+
+            if href in vidjeni:
+                continue
+
+            vidjeni.add(href)
+            linkovi.append(href)
+
+    if not linkovi:
+        raise RuntimeError(
+            "Nisu pronađeni izveštaji Produktne berze."
+        )
 
     izvestaji = []
 
-    for deo in delovi:
+    for link in linkovi:
 
-        rezultat = re.match(
-            r"#(\d+)\s*"
-            r"\((\d{2}\.\d{2})-(\d{2}\.\d{2}\.\d{4})\.\)",
-            deo
+        response = requests.get(
+            link,
+            headers=HEADERS,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        soup = BeautifulSoup(
+            response.text,
+            "html.parser"
+        )
+
+        h1 = soup.find("h1")
+
+        if not h1:
+            continue
+
+        naslov = normalizuj_tekst(
+            h1.get_text(" ", strip=True)
+        )
+
+        rezultat = re.search(
+            r"#(\d+)\s*\("
+            r"(\d{2})\.(\d{2})"
+            r"-(\d{2})\.(\d{2})\.(\d{4})",
+            naslov
         )
 
         if not rezultat:
             continue
 
-        broj_izvestaja = int(rezultat.group(1))
+        broj_izvestaja = int(
+            rezultat.group(1)
+        )
+
+        dan1 = rezultat.group(2)
+        mesec1 = rezultat.group(3)
+
+        dan2 = rezultat.group(4)
+        mesec2 = rezultat.group(5)
+
+        godina = rezultat.group(6)
 
         period = (
-            rezultat.group(2)
-            + "-"
-            + rezultat.group(3)
+            f"{dan1}.{mesec1}."
+            f"-{dan2}.{mesec2}.{godina}."
         )
+
+        datum = datetime(
+            int(godina),
+            int(mesec2),
+            int(dan2)
+        )
+
+        # BITNO:
+        # Čuvamo PASUSE odvojeno.
+        pasusi = []
+
+        for p in soup.find_all("p"):
+
+            tekst = normalizuj_tekst(
+                p.get_text(" ", strip=True)
+            )
+
+            if tekst:
+                pasusi.append(tekst)
 
         izvestaji.append({
             "broj": broj_izvestaja,
             "period": period,
-            "tekst": deo
+            "datum": datum,
+            "naslov": naslov,
+            "link": link,
+            "pasusi": pasusi
         })
 
     if not izvestaji:
         raise RuntimeError(
-            "Nisu pronađeni nedeljni izveštaji Produktne berze."
+            "Izveštaji postoje, ali nisu mogli biti obrađeni."
         )
 
     izvestaji.sort(
-        key=lambda x: x["broj"],
+        key=lambda x: (
+            x["datum"],
+            x["broj"]
+        ),
         reverse=True
     )
 
     return izvestaji
 
 
-def izvuci_psenicu(tekst):
+# ==========================================
+# PŠENICA
+# ==========================================
 
-    return izvuci_prvi_broj(
-        tekst,
-        [
-            (
-                r"pšenic.*?"
-                r"ponder cena iznosila je\s*"
-                r"(\d+,\d+)\s*din/kg"
-            ),
-            (
-                r"pšenic.*?"
-                r"prosečna cena.*?"
-                r"(\d+,\d+)\s*din/kg"
-            ),
-            (
-                r"pšenicom se trgovalo po ceni od\s*"
-                r"(\d+,\d+)\s*din/kg"
-            )
-        ]
-    )
+def psenica_iz_izvestaja(izvestaj):
 
+    for pasus in izvestaj["pasusi"]:
 
-def izvuci_kukuruz(tekst):
+        mali = pasus.lower()
 
-    return izvuci_prvi_broj(
-        tekst,
-        [
-            (
-                r"kukuruz.*?"
-                r"prosečna cena iznosila je\s*"
-                r"(\d+,\d+)\s*din/kg"
-            ),
-            (
-                r"kukuruz.*?"
-                r"ponder cena iznosila je\s*"
-                r"(\d+,\d+)\s*din/kg"
-            ),
-            (
-                r"prometovana cena kukuruza.*?"
-                r"iznosila je\s*"
-                r"(\d+,\d+)\s*din/kg"
-            )
-        ]
-    )
+        if (
+            "pšenic" not in mali
+            and "psenic" not in mali
+        ):
+            continue
+
+        cena = izvuci_broj(
+            pasus,
+            [
+                (
+                    r"pšenicom se trgovalo "
+                    r"po ceni od\s*(\d+,\d+)"
+                ),
+                (
+                    r"ponder cena iznosila je\s*"
+                    r"(\d+,\d+)"
+                ),
+                (
+                    r"prosečna cena hlebnog zrna "
+                    r"iznosila je\s*(\d+,\d+)"
+                ),
+                (
+                    r"prosečna cena pšenice "
+                    r"iznosila je\s*(\d+,\d+)"
+                )
+            ]
+        )
+
+        if cena is not None:
+            return cena
+
+    return None
 
 
-def izvuci_soju(tekst):
+# ==========================================
+# KUKURUZ
+# ==========================================
 
-    # samo REALIZOVANO trgovanje,
-    # ne ponuda ili tražnja
+def kukuruz_iz_izvestaja(izvestaj):
 
-    return izvuci_prvi_broj(
-        tekst,
-        [
-            (
-                r"soj.*?"
-                r"trgovalo se.*?"
-                r"(\d+,\d+)\s*din/kg"
-            ),
-            (
-                r"trgovana cena sojinog zrna "
-                r"iznosila je\s*"
-                r"(\d+,\d+)\s*din/kg"
-            ),
-            (
-                r"sojin.*?"
-                r"berzanski ugovor.*?"
-                r"(\d+,\d+)\s*din/kg"
-            )
-        ]
-    )
+    for pasus in izvestaj["pasusi"]:
 
+        if "kukuruz" not in pasus.lower():
+            continue
+
+        cena = izvuci_broj(
+            pasus,
+            [
+                (
+                    r"prosečna cena iznosila je\s*"
+                    r"(\d+,\d+)"
+                ),
+                (
+                    r"ponder cena iznosila je\s*"
+                    r"(\d+,\d+)"
+                ),
+                (
+                    r"prometovana cena kukuruza"
+                    r".*?iznosila je\s*(\d+,\d+)"
+                )
+            ]
+        )
+
+        if cena is not None:
+            return cena
+
+    return None
+
+
+# ==========================================
+# SOJA
+# ==========================================
+
+def soja_iz_izvestaja(izvestaj):
+
+    for pasus in izvestaj["pasusi"]:
+
+        mali = pasus.lower()
+
+        if (
+            "soj" not in mali
+        ):
+            continue
+
+        # Ako eksplicitno piše da trgovanja
+        # nije bilo, NE UZIMAMO ponudu/tražnju.
+        if (
+            "trgovanje je izostalo" in mali
+            or "trgovanje izostalo" in mali
+            or "izostanak prometa" in mali
+            or "nije došlo do trgovanja" in mali
+        ):
+            continue
+
+        cena = izvuci_broj(
+            pasus,
+            [
+                (
+                    r"ovom uljaricom trgovalo se "
+                    r"na jedinstvenom cenovnom nivou od\s*"
+                    r"(\d+,\d+)"
+                ),
+                (
+                    r"sojin.*?trgovalo se.*?"
+                    r"(\d+,\d+)\s*din/kg"
+                ),
+                (
+                    r"trgovana cena sojinog zrna "
+                    r"iznosila je\s*(\d+,\d+)"
+                ),
+                (
+                    r"ponder cena iznosila je\s*"
+                    r"(\d+,\d+)"
+                )
+            ]
+        )
+
+        if cena is not None:
+            return cena
+
+    return None
+
+
+# ==========================================
+# GLAVNA FUNKCIJA
+# ==========================================
 
 def uzmi_cene():
 
-    izvestaji = uzmi_izvestaje()
+    izvestaji = pronadji_izvestaje()
 
     najnoviji = izvestaji[0]
 
-    print("NAJNOVIJI IZVEŠTAJ:")
-    print(
-        f"#{najnoviji['broj']} "
-        f"({najnoviji['period']})"
-    )
+    print("\nNAJNOVIJI IZVEŠTAJ:")
+    print(najnoviji["naslov"])
+    print(najnoviji["link"])
 
 
     # PŠENICA
@@ -198,13 +352,15 @@ def uzmi_cene():
 
     for izvestaj in izvestaji:
 
-        cena = izvuci_psenicu(
-            izvestaj["tekst"]
+        cena = psenica_iz_izvestaja(
+            izvestaj
         )
 
         if cena is not None:
+
             psenica = cena
             psenica_period = izvestaj["period"]
+
             break
 
 
@@ -214,13 +370,15 @@ def uzmi_cene():
 
     for izvestaj in izvestaji:
 
-        cena = izvuci_kukuruz(
-            izvestaj["tekst"]
+        cena = kukuruz_iz_izvestaja(
+            izvestaj
         )
 
         if cena is not None:
+
             kukuruz = cena
             kukuruz_period = izvestaj["period"]
+
             break
 
 
@@ -230,13 +388,15 @@ def uzmi_cene():
 
     for izvestaj in izvestaji:
 
-        cena = izvuci_soju(
-            izvestaj["tekst"]
+        cena = soja_iz_izvestaja(
+            izvestaj
         )
 
         if cena is not None:
+
             soja = cena
             soja_period = izvestaj["period"]
+
             break
 
 
@@ -248,13 +408,10 @@ def uzmi_cene():
 
 
     podaci_izvestaja = {
-        "naslov": (
-            f"Produktna berza "
-            f"#{najnoviji['broj']} "
-            f"({najnoviji['period']})"
-        ),
+        "naslov": najnoviji["naslov"],
         "datum_objave": najnoviji["period"],
-        "link": URL,
+        "link": najnoviji["link"],
+
         "psenica_period": psenica_period,
         "kukuruz_period": kukuruz_period,
         "soja_period": soja_period
@@ -264,10 +421,22 @@ def uzmi_cene():
     print("\nIZVUČENO:")
     print(cene)
 
-    print("\nPERIODI:")
-    print("Pšenica:", psenica_period)
-    print("Kukuruz:", kukuruz_period)
-    print("Soja:", soja_period)
+    print("\nPERIOD POSLEDNJEG TRGOVANJA:")
+
+    print(
+        "Pšenica:",
+        psenica_period
+    )
+
+    print(
+        "Kukuruz:",
+        kukuruz_period
+    )
+
+    print(
+        "Soja:",
+        soja_period
+    )
 
 
     if all(
