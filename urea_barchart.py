@@ -1,3 +1,4 @@
+import re
 import requests
 
 
@@ -11,7 +12,7 @@ HEADERS = {
 }
 
 
-def test_barchart():
+def uzmi_barchart_ureu():
 
     response = requests.get(
         URL,
@@ -22,18 +23,89 @@ def test_barchart():
     print("STATUS:", response.status_code)
     print("DUZINA:", len(response.text))
 
-    print("\nPRVIH 500 KARAKTERA:")
-    print(response.text[:500])
+    response.raise_for_status()
 
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Barchart nije dostupan iz GitHub Actions. "
-            f"HTTP {response.status_code}"
+    html = response.text
+
+
+    # Probamo nekoliko obrazaca koji se pojavljuju
+    # u Barchart HTML/JSON podacima
+
+    obrasci = [
+        r'"lastPrice"\s*:\s*"?(\\d+(?:\\.\\d+)?)"?',
+        r'"last"\s*:\s*"?(\\d+(?:\\.\\d+)?)"?',
+        r'"price"\s*:\s*"?(\\d+(?:\\.\\d+)?)"?',
+        r'data-ng-value="lastPrice"[^>]*>\\s*(\\d+(?:\\.\\d+)?)',
+    ]
+
+
+    cena = None
+
+    for obrazac in obrasci:
+
+        rezultat = re.search(
+            obrazac,
+            html,
+            flags=re.IGNORECASE
         )
 
-    if "JCQ26" not in response.text and "Urea" not in response.text:
-        raise RuntimeError(
-            "Stranica je otvorena, ali sadržaj JCQ26 nije pronađen."
+        if rezultat:
+
+            kandidat = float(
+                rezultat.group(1)
+            )
+
+            # UREA trenutno treba da bude u realnom
+            # tržišnom opsegu, ne npr. 1.2 ili 50000
+            if 100 <= kandidat <= 1000:
+
+                cena = kandidat
+
+                print(
+                    "PRONAĐENA CENA:",
+                    cena
+                )
+
+                break
+
+
+    if cena is None:
+
+        print(
+            "\n⚠️ Cena nije pronađena standardnim obrascima."
         )
 
-    print("\n✅ BARCHART JCQ26 JE DOSTUPAN")
+        # Debug: tražimo delove gde se pojavljuje JCQ26
+        pozicija = html.find("JCQ26")
+
+        if pozicija != -1:
+
+            print(
+                "\nDEO HTML-A OKO JCQ26:"
+            )
+
+            print(
+                html[
+                    max(0, pozicija - 1000):
+                    pozicija + 3000
+                ]
+            )
+
+        raise RuntimeError(
+            "Barchart stranica radi, ali cena JCQ26 nije pronađena."
+        )
+
+
+    podaci = {
+        "simbol": "JCQ26",
+        "naziv": "Urea Granular FOB US Gulf Aug 2026",
+        "cena_usd_t": cena,
+        "izvor": URL
+    }
+
+
+    print("\nCBOT UREA:")
+    print(podaci)
+
+
+    return podaci
