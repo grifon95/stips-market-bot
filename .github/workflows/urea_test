@@ -1,0 +1,25 @@
+name: UREA TEST
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download code
+        uses: actions/checkout@v4
+
+      - name: Python setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Test UREA
+        run: |
+          python test_urea.py
