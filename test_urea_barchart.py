@@ -1,8 +1,13 @@
-from urea_barchart import test_barchart
+from urea_barchart import uzmi_barchart_ureu
 
 
 print("====================")
 print("BARCHART UREA TEST")
 print("====================")
 
-test_barchart()
+
+podaci = uzmi_barchart_ureu()
+
+
+print("\nREZULTAT:")
+print(podaci)
