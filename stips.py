@@ -33,6 +33,7 @@ def broj(vrednost):
 
 
 def izvuci_broj(tekst, obrasci):
+
     for obrazac in obrasci:
 
         rezultat = re.search(
@@ -47,16 +48,15 @@ def izvuci_broj(tekst, obrasci):
     return None
 
 
-# ==========================================
-# PRONALAZAK POSLEDNJIH IZVEŠTAJA
-# ==========================================
+# ==================================================
+# PRONALAZAK NEDELJNIH IZVEŠTAJA
+# ==================================================
 
 def pronadji_izvestaje():
 
     linkovi = []
     vidjeni = set()
 
-    # pregledamo više strana arhive
     for stranica in range(1, 5):
 
         if stranica == 1:
@@ -105,13 +105,22 @@ def pronadji_izvestaje():
 
     for link in linkovi:
 
-        response = requests.get(
-            link,
-            headers=HEADERS,
-            timeout=30
-        )
+        try:
+            response = requests.get(
+                link,
+                headers=HEADERS,
+                timeout=30
+            )
 
-        response.raise_for_status()
+            response.raise_for_status()
+
+        except requests.RequestException as greska:
+            print(
+                "Preskačem izveštaj:",
+                link,
+                greska
+            )
+            continue
 
         soup = BeautifulSoup(
             response.text,
@@ -160,8 +169,6 @@ def pronadji_izvestaje():
             int(dan2)
         )
 
-        # BITNO:
-        # Čuvamo PASUSE odvojeno.
         pasusi = []
 
         for p in soup.find_all("p"):
@@ -198,9 +205,36 @@ def pronadji_izvestaje():
     return izvestaji
 
 
-# ==========================================
+# ==================================================
+# PROVERA DA LI JE TRGOVANJE IZOSTALO
+# ==================================================
+
+def nema_trgovanja(pasus):
+
+    mali = pasus.lower()
+
+    izrazi = [
+        "trgovanje je izostalo",
+        "trgovanje izostalo",
+        "trgovina je izostala",
+        "trgovina nije realizovana",
+        "nije došlo do trgovanja",
+        "nije došlo do zaključenja",
+        "zaključenje berzanskih ugovora izostalo",
+        "izostanak trgovanja",
+        "izostankom trgovanja",
+        "izostankom trgovinskih aktivnosti"
+    ]
+
+    return any(
+        izraz in mali
+        for izraz in izrazi
+    )
+
+
+# ==================================================
 # PŠENICA
-# ==========================================
+# ==================================================
 
 def psenica_iz_izvestaja(izvestaj):
 
@@ -211,28 +245,29 @@ def psenica_iz_izvestaja(izvestaj):
         if (
             "pšenic" not in mali
             and "psenic" not in mali
+            and "hlebno zrno" not in mali
         ):
+            continue
+
+        if nema_trgovanja(pasus):
             continue
 
         cena = izvuci_broj(
             pasus,
             [
-                (
-                    r"pšenicom se trgovalo "
-                    r"po ceni od\s*(\d+,\d+)"
-                ),
-                (
-                    r"ponder cena iznosila je\s*"
-                    r"(\d+,\d+)"
-                ),
-                (
-                    r"prosečna cena hlebnog zrna "
-                    r"iznosila je\s*(\d+,\d+)"
-                ),
-                (
-                    r"prosečna cena pšenice "
-                    r"iznosila je\s*(\d+,\d+)"
-                )
+                # #83
+                r"ponder cena iznosi\s*(\d+,\d+)",
+
+                # stariji izveštaji
+                r"ponder cena iznosila je\s*(\d+,\d+)",
+
+                r"pšenicom se trgovalo po ceni od\s*(\d+,\d+)",
+
+                r"prosečna cena hlebnog zrna iznosila je\s*(\d+,\d+)",
+
+                r"prosečna cena pšenice iznosila je\s*(\d+,\d+)",
+
+                r"prosečna cena iznosila je\s*(\d+,\d+)"
             ]
         )
 
@@ -242,31 +277,52 @@ def psenica_iz_izvestaja(izvestaj):
     return None
 
 
-# ==========================================
+# ==================================================
 # KUKURUZ
-# ==========================================
+# ==================================================
 
 def kukuruz_iz_izvestaja(izvestaj):
 
     for pasus in izvestaj["pasusi"]:
 
-        if "kukuruz" not in pasus.lower():
+        mali = pasus.lower()
+
+        if "kukuruz" not in mali:
             continue
+
+        # Može pasus da kaže da jedna VRSTA kukuruza
+        # nije trgovana, a druga jeste.
+        # Zato prvo pokušavamo da pronađemo
+        # REALIZOVANU cenu.
 
         cena = izvuci_broj(
             pasus,
             [
+                # #83:
+                # Zaključen je samo jedan berzanski ugovor
+                # po ceni 19,80 ... što predstavlja ponder cenu
                 (
-                    r"prosečna cena iznosila je\s*"
-                    r"(\d+,\d+)"
+                    r"zaključen.*?"
+                    r"berzanski ugovor.*?"
+                    r"po ceni\s*(\d+,\d+)"
                 ),
+
+                # #82
+                r"prosečna cena iznosila je\s*(\d+,\d+)",
+
+                # #81
                 (
-                    r"ponder cena iznosila je\s*"
-                    r"(\d+,\d+)"
+                    r"prometovana cena kukuruza.*?"
+                    r"iznosila je\s*(\d+,\d+)"
                 ),
+
+                r"ponder cena iznosi\s*(\d+,\d+)",
+
+                r"ponder cena iznosila je\s*(\d+,\d+)",
+
                 (
-                    r"prometovana cena kukuruza"
-                    r".*?iznosila je\s*(\d+,\d+)"
+                    r"kukuruzom se trgovalo.*?"
+                    r"(\d+,\d+)\s*din"
                 )
             ]
         )
@@ -277,9 +333,9 @@ def kukuruz_iz_izvestaja(izvestaj):
     return None
 
 
-# ==========================================
+# ==================================================
 # SOJA
-# ==========================================
+# ==================================================
 
 def soja_iz_izvestaja(izvestaj):
 
@@ -287,19 +343,12 @@ def soja_iz_izvestaja(izvestaj):
 
         mali = pasus.lower()
 
-        if (
-            "soj" not in mali
-        ):
+        if "soj" not in mali:
             continue
 
-        # Ako eksplicitno piše da trgovanja
-        # nije bilo, NE UZIMAMO ponudu/tražnju.
-        if (
-            "trgovanje je izostalo" in mali
-            or "trgovanje izostalo" in mali
-            or "izostanak prometa" in mali
-            or "nije došlo do trgovanja" in mali
-        ):
+        # Kod soje nikada ne uzimamo samo
+        # ponudu ili tražnju kao tržišnu cenu.
+        if nema_trgovanja(pasus):
             continue
 
         cena = izvuci_broj(
@@ -310,17 +359,26 @@ def soja_iz_izvestaja(izvestaj):
                     r"na jedinstvenom cenovnom nivou od\s*"
                     r"(\d+,\d+)"
                 ),
+
                 (
-                    r"sojin.*?trgovalo se.*?"
-                    r"(\d+,\d+)\s*din/kg"
+                    r"sojin.*?"
+                    r"trgovalo se.*?"
+                    r"(\d+,\d+)\s*din"
                 ),
+
                 (
                     r"trgovana cena sojinog zrna "
                     r"iznosila je\s*(\d+,\d+)"
                 ),
+
                 (
-                    r"ponder cena iznosila je\s*"
-                    r"(\d+,\d+)"
+                    r"kupoprodajni ugovori za sojino zrno "
+                    r"zaključeni su po ceni od\s*(\d+,\d+)"
+                ),
+
+                (
+                    r"za sojino zrno zaključen je.*?"
+                    r"po ceni od\s*(\d+,\d+)"
                 )
             ]
         )
@@ -331,9 +389,28 @@ def soja_iz_izvestaja(izvestaj):
     return None
 
 
-# ==========================================
+# ==================================================
+# DA LI SE ROBA POMINJE U IZVEŠTAJU
+# ==================================================
+
+def roba_se_pominje(izvestaj, kljucevi):
+
+    for pasus in izvestaj["pasusi"]:
+
+        mali = pasus.lower()
+
+        if any(
+            kljuc in mali
+            for kljuc in kljucevi
+        ):
+            return True
+
+    return False
+
+
+# ==================================================
 # GLAVNA FUNKCIJA
-# ==========================================
+# ==================================================
 
 def uzmi_cene():
 
@@ -346,43 +423,101 @@ def uzmi_cene():
     print(najnoviji["link"])
 
 
-    # PŠENICA
-    psenica = None
+    # ==================================================
+    # PŠENICA — PRVO NAJNOVIJI IZVEŠTAJ
+    # ==================================================
+
+    psenica = psenica_iz_izvestaja(
+        najnoviji
+    )
+
     psenica_period = None
 
-    for izvestaj in izvestaji:
+    if psenica is not None:
 
-        cena = psenica_iz_izvestaja(
-            izvestaj
-        )
+        psenica_period = najnoviji["period"]
 
-        if cena is not None:
+    else:
 
-            psenica = cena
-            psenica_period = izvestaj["period"]
+        # Ako se pšenica pominje u najnovijem izveštaju,
+        # ali parser nije našao cenu, NE SMEMO tiho
+        # uzeti staru cenu.
+        if roba_se_pominje(
+            najnoviji,
+            ["pšenic", "psenic", "hlebno zrno"]
+        ):
 
-            break
+            raise RuntimeError(
+                "Pšenica se nalazi u najnovijem "
+                f"izveštaju #{najnoviji['broj']}, "
+                "ali cena nije mogla biti pročitana. "
+                "Parser treba proveriti."
+            )
+
+        # Samo ako se roba uopšte ne pominje,
+        # tražimo poslednju realizovanu cenu.
+        for izvestaj in izvestaji[1:]:
+
+            cena = psenica_iz_izvestaja(
+                izvestaj
+            )
+
+            if cena is not None:
+
+                psenica = cena
+                psenica_period = izvestaj["period"]
+                break
 
 
-    # KUKURUZ
-    kukuruz = None
+    # ==================================================
+    # KUKURUZ — PRVO NAJNOVIJI IZVEŠTAJ
+    # ==================================================
+
+    kukuruz = kukuruz_iz_izvestaja(
+        najnoviji
+    )
+
     kukuruz_period = None
 
-    for izvestaj in izvestaji:
+    if kukuruz is not None:
 
-        cena = kukuruz_iz_izvestaja(
-            izvestaj
-        )
+        kukuruz_period = najnoviji["period"]
 
-        if cena is not None:
+    else:
 
-            kukuruz = cena
-            kukuruz_period = izvestaj["period"]
+        if roba_se_pominje(
+            najnoviji,
+            ["kukuruz"]
+        ):
 
-            break
+            raise RuntimeError(
+                "Kukuruz se nalazi u najnovijem "
+                f"izveštaju #{najnoviji['broj']}, "
+                "ali cena nije mogla biti pročitana. "
+                "Parser treba proveriti."
+            )
+
+        for izvestaj in izvestaji[1:]:
+
+            cena = kukuruz_iz_izvestaja(
+                izvestaj
+            )
+
+            if cena is not None:
+
+                kukuruz = cena
+                kukuruz_period = izvestaj["period"]
+                break
 
 
+    # ==================================================
     # SOJA
+    # ==================================================
+
+    # Kod soje je drugačije:
+    # ako nema realizovane trgovine u najnovijoj nedelji,
+    # legitimno tražimo poslednju stvarno trgovanu cenu.
+
     soja = None
     soja_period = None
 
@@ -396,7 +531,6 @@ def uzmi_cene():
 
             soja = cena
             soja_period = izvestaj["period"]
-
             break
 
 
@@ -408,12 +542,17 @@ def uzmi_cene():
 
 
     podaci_izvestaja = {
+
         "naslov": najnoviji["naslov"],
+
         "datum_objave": najnoviji["period"],
+
         "link": najnoviji["link"],
 
         "psenica_period": psenica_period,
+
         "kukuruz_period": kukuruz_period,
+
         "soja_period": soja_period
     }
 
@@ -443,6 +582,7 @@ def uzmi_cene():
         vrednost is None
         for vrednost in cene.values()
     ):
+
         raise RuntimeError(
             "Nije pronađena nijedna realizovana cena."
         )
