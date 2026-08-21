@@ -2,7 +2,7 @@ import re
 import requests
 
 
-URL = "https://www.barchart.com/futures/quotes/JCQ26/overview"
+URL = "https://www.barchart.com/futures/quotes/JCQ26/comparison"
 
 HEADERS = {
     "User-Agent": (
@@ -28,84 +28,52 @@ def uzmi_barchart_ureu():
     html = response.text
 
 
-    # Probamo nekoliko obrazaca koji se pojavljuju
-    # u Barchart HTML/JSON podacima
+    # Tražimo delove oko ključnih polja
+    for rec in [
+        "Latest",
+        "Previous Close",
+        "% Change",
+        "JCQ26"
+    ]:
 
+        pozicija = html.find(rec)
+
+        print("\n================")
+        print("TRAZIM:", rec)
+        print("================")
+
+        if pozicija == -1:
+            print("NIJE PRONADJENO")
+        else:
+            print(
+                html[
+                    max(0, pozicija - 500):
+                    pozicija + 1500
+                ]
+            )
+
+
+    # Probni regex za cenu
     obrasci = [
-        r'"lastPrice"\s*:\s*"?(\\d+(?:\\.\\d+)?)"?',
-        r'"last"\s*:\s*"?(\\d+(?:\\.\\d+)?)"?',
-        r'"price"\s*:\s*"?(\\d+(?:\\.\\d+)?)"?',
-        r'data-ng-value="lastPrice"[^>]*>\\s*(\\d+(?:\\.\\d+)?)',
+        r"Latest.{0,500}?(\d{3}(?:\.\d+)?)",
+        r"Previous Close.{0,500}?(\d{3}(?:\.\d+)?)"
     ]
 
-
-    cena = None
 
     for obrazac in obrasci:
 
         rezultat = re.search(
             obrazac,
             html,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE | re.DOTALL
         )
 
         if rezultat:
 
-            kandidat = float(
+            print(
+                "\nPRONADJEN BROJ:",
                 rezultat.group(1)
             )
 
-            # UREA trenutno treba da bude u realnom
-            # tržišnom opsegu, ne npr. 1.2 ili 50000
-            if 100 <= kandidat <= 1000:
 
-                cena = kandidat
-
-                print(
-                    "PRONAĐENA CENA:",
-                    cena
-                )
-
-                break
-
-
-    if cena is None:
-
-        print(
-            "\n⚠️ Cena nije pronađena standardnim obrascima."
-        )
-
-        # Debug: tražimo delove gde se pojavljuje JCQ26
-        pozicija = html.find("JCQ26")
-
-        if pozicija != -1:
-
-            print(
-                "\nDEO HTML-A OKO JCQ26:"
-            )
-
-            print(
-                html[
-                    max(0, pozicija - 1000):
-                    pozicija + 3000
-                ]
-            )
-
-        raise RuntimeError(
-            "Barchart stranica radi, ali cena JCQ26 nije pronađena."
-        )
-
-
-    podaci = {
-        "simbol": "JCQ26",
-        "naziv": "Urea Granular FOB US Gulf Aug 2026",
-        "cena_usd_t": cena,
-        "izvor": URL
-    }
-
-
-    print("\nCBOT UREA:")
-    print(podaci)
-
-
-    return podaci
+    print("\n✅ COMPARISON STRANICA PROCITANA")
