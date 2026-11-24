@@ -3,4 +3,3 @@ pandas
 matplotlib
 beautifulsoup4
 lxml
-matplotlib
